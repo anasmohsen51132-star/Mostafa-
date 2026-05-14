@@ -1,0 +1,113 @@
+const express = require('express');
+const fs = require('fs');
+const path = require('path');
+const session = require('express-session');
+const PDFDocument = require('pdfkit');
+
+const app = express();
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(session({
+    secret: 'mostafa-arabic-2026',
+    resave: false,
+    saveUninitialized: true
+}));
+
+const DATA_FILE = './data.json';
+
+// تهيئة قاعدة البيانات لو مش موجودة
+if (!fs.existsSync(DATA_FILE)) {
+    fs.writeFileSync(DATA_FILE, JSON.stringify({ users: [], courses: [], codes: [] }));
+}
+
+const readData = () => JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+const saveData = (data) => fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+
+// --- [ 1. نظام التسجيل والدخول التلقائي ] ---
+app.post('/api/register', (req, res) => {
+    const { username, password } = req.body;
+    let data = readData();
+    if (data.users.find(u => u.username === username)) return res.json({ success: false, msg: 'المستخدم موجود فعلاً' });
+
+    const newUser = { 
+        id: "u_" + Date.now(), 
+        username, 
+        password, 
+        role: 'student', 
+        courses: [] 
+    };
+    data.users.push(newUser);
+    saveData(data);
+    
+    req.session.user = newUser; // دخول تلقائي فوراً
+    res.json({ success: true, user: newUser });
+});
+
+// --- [ 2. نظام الكورسات والمحاضرات ] ---
+app.post('/api/admin/create-course', (req, res) => {
+    const { title, desc } = req.body;
+    let data = readData();
+    const newCourse = { id: "c_" + Date.now(), title, desc, lectures: [] };
+    data.courses.push(newCourse);
+    saveData(data);
+    res.json({ success: true });
+});
+
+app.post('/api/admin/add-lecture', (req, res) => {
+    const { courseId, title, url } = req.body;
+    let data = readData();
+    const course = data.courses.find(c => c.id === courseId);
+    if (course) {
+        course.lectures.push({ title, url });
+        saveData(data);
+        res.json({ success: true });
+    }
+});
+
+// --- [ 3. توليد الأكواد PDF (Bulk) ] ---
+app.get('/api/admin/generate-codes-pdf', (req, res) => {
+    const { count, courseId } = req.query;
+    let data = readData();
+    const newCodes = [];
+
+    for (let i = 0; i < parseInt(count); i++) {
+        const code = Math.random().toString(36).substring(2, 8).toUpperCase();
+        data.codes.push({ code, courseId, used: false });
+        newCodes.push(code);
+    }
+    saveData(data);
+
+    const doc = new PDFDocument();
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'attachment; filename=codes.pdf');
+    doc.pipe(res);
+    doc.fontSize(25).text('أكواد منصة الأستاذ مصطفى', { align: 'center' });
+    doc.moveDown();
+    newCodes.forEach((c, idx) => doc.fontSize(16).text(`${idx + 1}- Code: ${c}`));
+    doc.end();
+});
+
+// --- [ 4. تفعيل الكود للطالب ] ---
+app.post('/api/activate', (req, res) => {
+    if (!req.session.user) return res.json({ success: false, msg: 'سجل دخولك أولاً' });
+    const { code } = req.body;
+    let data = readData();
+    const codeIdx = data.codes.findIndex(c => c.code === code && !c.used);
+
+    if (codeIdx === -1) return res.json({ success: false, msg: 'كود غلط أو مستخدم' });
+
+    const courseId = data.codes[codeIdx].courseId;
+    data.codes[codeIdx].used = true;
+    
+    const userIdx = data.users.findIndex(u => u.id === req.session.user.id);
+    if (!data.users[userIdx].courses.includes(courseId)) {
+        data.users[userIdx].courses.push(courseId);
+    }
+    
+    saveData(data);
+    res.json({ success: true });
+});
+
+app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
+
+app.listen(3000, () => console.log('Server is running on port 3000'));
