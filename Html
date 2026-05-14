@@ -1,0 +1,51 @@
+<script>
+    async function handleRegister() {
+        const username = prompt("اسم المستخدم الجديد:");
+        const password = prompt("كلمة السر:");
+        if(!username || !password) return;
+
+        const res = await fetch('/api/register', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ username, password })
+        });
+        const data = await res.json();
+        if(data.success) {
+            alert("تم التسجيل والدخول تلقائياً!");
+            toggleDashboard(); // دخله المنصة فوراً
+        } else {
+            alert(data.msg);
+        }
+    }
+
+    async function activateCode() {
+        const code = document.querySelector('input[placeholder="ادخل الكود هنا..."]').value;
+        const res = await fetch('/api/activate', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ code })
+        });
+        const data = await res.json();
+        if(data.success) {
+            alert("تم تفعيل الكورس! حدث الصفحة لمشاهدة المحاضرات.");
+            location.reload();
+        } else {
+            alert(data.msg);
+        }
+    }
+
+    function toggleDashboard() {
+        document.getElementById('main-content').classList.toggle('hidden');
+        document.getElementById('dashboard').classList.toggle('hidden');
+        window.scrollTo(0,0);
+    }
+
+    // ربط زراير التصميم
+    document.addEventListener('DOMContentLoaded', () => {
+        const regBtn = document.querySelector('button.bg-indigo-700.text-white');
+        if(regBtn) regBtn.onclick = handleRegister;
+
+        const actBtn = document.querySelector('button.bg-gold-text');
+        if(actBtn) actBtn.onclick = activateCode;
+    });
+</script>
